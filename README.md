@@ -5,6 +5,7 @@ A personal notebook of DevOps recipes and runbooks. Each Markdown file documents
 ## Contents
 
 - [setup-new-server.md](./setup-new-server.md) — Initial setup and hardening for a fresh Linux server (updates, non-root user, SSH key auth, firewall, fail2ban, etc.)
+- [deploy-repo-to-server.md](./deploy-repo-to-server.md) — Connect a server to a private GitHub repo via a per-repo deploy key (read-only, scoped, easy to rotate). Cloning is a one-liner once the connection is set up.
 
 ## Conventions
 
