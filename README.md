@@ -1,15 +1,32 @@
 # DevOps Notebook
 
-A personal notebook of DevOps recipes and runbooks. Each Markdown file documents how to do a specific task, step by step, so I don't have to re-figure it out next time.
+A personal collection of [Claude Code skills](https://docs.claude.com/en/docs/claude-code/skills) for DevOps work. Each skill is a reusable, step-by-step playbook that Claude can follow — setting up servers, wiring deploys, git workflows — so the know-how is captured once and executed consistently every time.
 
-## Contents
+## Skills
 
-- [setup-new-server.md](./setup-new-server.md) — Initial setup and hardening for a fresh Linux server (updates, non-root user, SSH key auth, firewall, fail2ban, etc.)
-- [deploy-repo-to-server.md](./deploy-repo-to-server.md) — Connect a server to a private GitHub repo via a per-repo deploy key (read-only, scoped, easy to rotate). Cloning is a one-liner once the connection is set up.
+Skills live under `skills/`, grouped by category. Each folder holds one skill as a `SKILL.md` file.
 
-## Conventions
+| Category | Skill | What it does |
+| --- | --- | --- |
+| `devops` | [connect-repo-to-server](./skills/devops/connect-repo-to-server/SKILL.md) | Connect a server to a private GitHub repo via a per-repo deploy key, then clone it. Runs all server-side steps over SSH; the only manual step is pasting the key into GitHub. |
+| `git` | [github-commit](./skills/git/github-commit/SKILL.md) | Stage and commit changes with a message that matches the repo's existing commit style. No co-author trailers, no pushes unless asked. |
 
-- One topic per file, named with kebab-case (e.g. `setup-new-server.md`).
-- Commands are shown in fenced code blocks. Anything the reader must replace is written in `ALL_CAPS` (e.g. `NEW_USER`, `SERVER_IP`).
-- Steps that run on the local machine vs. the remote server are labelled `# local` and `# remote`.
-- When a command needs `sudo`, it is shown explicitly. The runbooks assume Ubuntu/Debian unless stated otherwise.
+## Structure
+
+```
+skills/
+├── devops/
+│   └── connect-repo-to-server/
+│       └── SKILL.md
+└── git/
+    └── github-commit/
+        └── SKILL.md
+```
+
+## Using a skill
+
+Point Claude Code at this repo (or copy a skill folder into your project's `.claude/skills/` or `~/.claude/skills/`), and Claude will pick it up automatically when a task matches the skill's description — or invoke it directly with `/<skill-name>`.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for how skills are organized and what a good skill looks like.
