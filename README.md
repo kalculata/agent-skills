@@ -1,6 +1,6 @@
-# DevOps Notebook
+# Agent Skills
 
-A personal collection of [Claude Code skills](https://docs.claude.com/en/docs/claude-code/skills) for DevOps work. Each skill is a reusable, step-by-step playbook that Claude can follow — setting up servers, wiring deploys, git workflows — so the know-how is captured once and executed consistently every time.
+A personal collection of [agent skills](https://docs.claude.com/en/docs/claude-code/skills). Each skill is a reusable, step-by-step playbook that an AI agent can follow — setting up servers, wiring deploys, git workflows — so the know-how is captured once and executed consistently every time.
 
 ## Skills
 
@@ -25,7 +25,7 @@ skills/
 
 ## Using a skill
 
-Point Claude Code at this repo (or copy a skill folder into your project's `.claude/skills/` or `~/.claude/skills/`), and Claude will pick it up automatically when a task matches the skill's description — or invoke it directly with `/<skill-name>`.
+Point your agent at this repo, or copy a skill folder into wherever it looks for skills (e.g. `.claude/skills/` or `~/.claude/skills/` for Claude Code). The agent picks a skill up automatically when a task matches its description — in Claude Code you can also invoke one directly with `/<skill-name>`.
 
 ## Contributing
 
