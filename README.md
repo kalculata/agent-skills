@@ -10,6 +10,7 @@ Skills live under `skills/`, grouped by category. Each folder holds one skill as
 | --- | --- | --- |
 | `devops` | [connect-repo-to-server](./skills/devops/connect-repo-to-server/SKILL.md) | Connect a server to a private GitHub repo via a per-repo deploy key, then clone it. Runs all server-side steps over SSH; the only manual step is pasting the key into GitHub. |
 | `git` | [github-commit](./skills/git/github-commit/SKILL.md) | Stage and commit changes with a message that matches the repo's existing commit style. No co-author trailers, no pushes unless asked. |
+| `security` | [webapp-security-audit](./skills/security/webapp-security-audit/SKILL.md) | Audit a webapp repo: vulnerable/outdated dependencies, secrets in the working tree and git history (with history-rewrite proposal), and common hardening issues. Ends with a Critical/Medium/Small report saying how to fix each issue and who can fix it. |
 
 ## Structure
 
@@ -18,8 +19,11 @@ skills/
 ├── devops/
 │   └── connect-repo-to-server/
 │       └── SKILL.md
-└── git/
-    └── github-commit/
+├── git/
+│   └── github-commit/
+│       └── SKILL.md
+└── security/
+    └── webapp-security-audit/
         └── SKILL.md
 ```
 
