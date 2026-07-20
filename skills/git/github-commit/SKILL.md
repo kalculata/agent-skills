@@ -15,6 +15,7 @@ Create a clean commit only when the user explicitly asks. Inspect changes first,
 - Do **not** commit unless the user asked for it in this turn (or a user rule requires it).
 - Do **not** push unless the user explicitly asks.
 - Never update git config, skip hooks, force-push, or run destructive git commands unless explicitly requested.
+- **No co-authors** — commit as the user only. Never append `Co-Authored-By`, `Signed-off-by`, or similar trailers for Cursor, Claude Code, Copilot, or any AI tool. Do not pass `--author` or `--trailer` flags to add them.
 
 ## Step 1 — Read the current state
 
@@ -74,7 +75,12 @@ When unsure, prefer the dominant style in recent history over inventing a new fo
 - **Subject**: one line, ≤72 characters, imperative mood (`Add`, `Fix`, `Update`, not `Added` / `Adds`).
 - **Body** (optional): only when the change needs context — wrap at ~72 chars, blank line after subject.
 - Use accurate verbs: `add` = new capability/file, `update` = enhance existing, `fix` = bug fix, `docs` = documentation only, `refactor` = behavior-preserving restructure.
-- Do not mention tool names ("Cursor", "AI") or meta noise ("WIP", "misc changes").
+- Do not mention tool names ("Cursor", "Claude", "AI") or meta noise ("WIP", "misc changes").
+- **No co-author lines** — the message is subject (+ optional body) only. Never add:
+  ```
+  Co-Authored-By: Cursor <...>
+  Co-Authored-By: Claude Code <...>
+  ```
 
 ### Examples for this notebook repo
 
@@ -92,6 +98,8 @@ Fix typo in setup-new-server SSH key instructions
 
 ## Step 4 — Commit
 
+Use a plain `git commit` with `-m` only. No `--trailer`, no `--author`, no co-author footer in the message body.
+
 Pass the message via HEREDOC so formatting is preserved:
 
 ```bash
@@ -102,6 +110,14 @@ Optional body when needed.
 EOF
 )"
 ```
+
+After committing, confirm the message has no co-author trailers:
+
+```bash
+git log -1 --format=%B
+```
+
+If a hook or tool injected a `Co-Authored-By` line, amend only when allowed by the user's git rules — otherwise reset and recommit with a clean message.
 
 Then verify:
 
@@ -122,6 +138,7 @@ If the commit is **rejected** by a pre-commit hook:
 - [ ] User explicitly requested a commit
 - [ ] Reviewed `git status` and `git diff` (staged + unstaged)
 - [ ] Message matches recent `git log` style
+- [ ] No `Co-Authored-By` or AI tool attribution in the commit
 - [ ] No secrets in staged files
 - [ ] Only intended files staged
 - [ ] `git status` clean after commit (or only expected leftovers reported)
