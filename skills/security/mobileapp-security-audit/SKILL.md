@@ -5,9 +5,12 @@ description: >-
   pub/Gradle/CocoaPods dependencies for known vulnerabilities, scan the
   working tree and full git history for keystores, .env files, API keys and
   other secrets (anything bundled as a Flutter asset ships inside the APK/IPA),
-  and review mobile hardening issues — insecure storage, cleartext traffic,
+  review mobile hardening issues — insecure storage, cleartext traffic,
   disabled certificate validation, debuggable/backup flags, missing
-  obfuscation, exported components, WebView misuse. Use when the user asks to
+  obfuscation, exported components, WebView misuse — and read the Dart source
+  for code-level flaws: SQL injection, crypto misuse, weak randomness,
+  client-side-only authorization, unsafe deep-link handling, fail-open error
+  handling. Use when the user asks to
   audit a mobile/Flutter app, check it for vulnerabilities, scan for leaked
   keys, or harden an app before release. Ends with a severity-ranked report
   (Critical/Medium/Small) stating how to fix each issue and whether the user
@@ -16,9 +19,9 @@ description: >-
 
 # Mobile App Security Audit (Flutter-first)
 
-Audit the current mobile app repository for security issues, then present a single consolidated report. This skill is **analysis first**: do not change anything during the audit. Fixes happen only in Step 7, after the user picks what to fix.
+Audit the current mobile app repository for security issues, then present a single consolidated report. This skill is **analysis first**: do not change anything during the audit. Fixes happen only in Step 8, after the user picks what to fix.
 
-Primary target is **Flutter** (Dart + embedded Android/iOS projects). If the repo turns out to be native Android, native iOS, or React Native instead, apply the platform-side checks (Steps 3–6) that still fit and say which Flutter-specific checks were skipped.
+Primary target is **Flutter** (Dart + embedded Android/iOS projects). If the repo turns out to be native Android, native iOS, or React Native instead, apply the platform-side checks (Steps 3–7) that still fit and say which Flutter-specific checks were skipped.
 
 Severity levels used throughout:
 
@@ -125,7 +128,24 @@ Check what you can actually verify in the code; don't speculate.
 - **Firebase** — if `firebase_*` packages are present, you usually cannot see Security Rules from the app repo. If `firestore.rules`/`storage.rules`/`database.rules.json` are committed, review them: `allow read, write: if true` (or `if request.auth != null` guarding all data for any signed-in user) → 🔴. If rules are not in the repo, add a 🟡 line telling the user to verify rules in the Firebase console — client apps are trivially inspectable, so rules are the only real boundary.
 - **Root/jailbreak & tamper detection** — absent: mention only for high-risk apps (payments, DRM) as a 🟡 recommendation.
 
-## Step 6 — Platform config review (Android & iOS)
+## Step 6 — Dart source code review
+
+Unlike the grep checks above, this step means **reading the code**. Don't read all of `lib/` on a large app — prioritize the security-relevant surface: auth/session services, API clients and interceptors, anything touching payments or PII, crypto/utils, database helpers, and deep-link/notification handlers. Say in the report which areas you read and which you skipped.
+
+Look for:
+
+- **SQL injection** — sqflite `rawQuery`/`rawInsert`/`rawUpdate`/`rawDelete` (or `database.execute`) built with string interpolation (`'... WHERE id = $id'`) instead of `?` placeholders and `whereArgs` → 🟠, 🔴 if the interpolated value comes from user or server input.
+- **Crypto misuse** — `Random()` instead of `Random.secure()` for tokens/OTPs/nonces; hardcoded AES keys or IVs in source; ECB mode; MD5/SHA-1 for password hashing; hand-rolled crypto instead of a maintained package → 🟠, 🔴 for a hardcoded key protecting real user data.
+- **Client-side-only authorization** — roles/flags (`isAdmin`, `isPremium`, feature gates, prices) read from local storage or computed in the app and trusted without server-side enforcement. The binary is public and modifiable, so client checks are UX, not security → 🟠, flagged as "verify the backend enforces this."
+- **Auth/session logic** — tokens with no expiry handling or refresh-token rotation; `local_auth` biometric results not actually gating access to the protected secret (a boolean check the OS gates, while the token sits readable in storage); logout that doesn't clear stored credentials → 🟠 needs review.
+- **Deep-link handling** — read the actual handlers (`app_links`/`uni_links` stream listeners, `go_router` `redirect` logic, `onGenerateRoute`), not just their registration: scheme/host not checked before acting on a link; payload values passed unvalidated into navigation routes, WebView URLs, or query parameters forwarded to the backend; links that can land directly on an authenticated or sensitive screen, skipping the login/PIN/biometric route guard; link parameters driving open-redirect-style navigation to external URLs → 🟠, 🔴 if a crafted link provably bypasses an auth gate.
+- **Unvalidated external input** — notification/QR/clipboard payload values used the same ways as deep-link params above, and path traversal via server- or user-supplied filenames in `File('$dir/$name')` → 🟠.
+- **Error handling** — broad or empty `catch` blocks that **fail open**: certificate-pinning or signature-verification errors swallowed and the request proceeds, an auth/permission check wrapped in try/catch that defaults to allowed on exception → 🟠, 🔴 if it provably disables a security control. Raw exception details, stack traces, or backend error bodies rendered in the UI (leaks endpoints, queries, internal versions) → 🟡. Global handlers (`FlutterError.onError`, `runZonedGuarded`, `PlatformDispatcher.onError`) forwarding tokens or PII to crash reporting → 🟠. Also flag the absence of any global error handler in `main()` as 🟡 — unhandled errors then surface raw to users or die silently.
+- **Sensitive data in the wrong place** — secrets written to external/temp storage, PII in analytics/crash-reporting calls (`FirebaseCrashlytics.log`, custom events), secrets copied to the clipboard without expiry → 🟠 if provable, 🟡 otherwise.
+
+For code-level findings, be precise about what you verified versus what needs a runtime check or backend knowledge you don't have — report the latter as "needs review", not as confirmed vulnerabilities.
+
+## Step 7 — Platform config review (Android & iOS)
 
 **Android** (`android/app/src/main/AndroidManifest.xml`, `build.gradle`):
 
@@ -143,7 +163,7 @@ Check what you can actually verify in the code; don't speculate.
 - Missing or boilerplate purpose strings (`NS*UsageDescription`) for camera/location/etc. → 🟡 (App Store rejection + privacy hygiene).
 - Sensitive values (API keys, secrets) stored directly in `Info.plist` → same rules as Step 3.
 
-## Step 7 — The report
+## Step 8 — The report
 
 Finish with one consolidated report — this is the deliverable. Format:
 
