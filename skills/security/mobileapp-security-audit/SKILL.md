@@ -132,6 +132,8 @@ Check what you can actually verify in the code; don't speculate.
 
 Unlike the grep checks above, this step means **reading the code**. Don't read all of `lib/` on a large app — prioritize the security-relevant surface: auth/session services, API clients and interceptors, anything touching payments or PII, crypto/utils, database helpers, and deep-link/notification handlers. Say in the report which areas you read and which you skipped.
 
+**Use subagents for the reading.** If your environment supports spawning subagents (e.g. the Task/Agent tool in Claude Code), don't read the codebase in your own context — first map `lib/` to identify the security-relevant areas, then fan out one read-only subagent per area **in parallel** (auth/session, API/network layer, storage/database, deep-link & navigation, crypto/utils, payments/PII). Give each subagent the checklist bullets below that match its area and require findings back in a fixed shape: `file:line — what was found — severity guess — verified vs needs-review`, with secret values redacted. Consolidate their findings yourself: dedupe, re-check anything surprising by reading the cited lines directly (subagents can over-claim), and apply the final severity. If subagents aren't available, read the prioritized areas sequentially yourself.
+
 Look for:
 
 - **SQL injection** — sqflite `rawQuery`/`rawInsert`/`rawUpdate`/`rawDelete` (or `database.execute`) built with string interpolation (`'... WHERE id = $id'`) instead of `?` placeholders and `whereArgs` → 🟠, 🔴 if the interpolated value comes from user or server input.
