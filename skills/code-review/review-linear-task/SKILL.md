@@ -7,7 +7,10 @@ description: >-
   changes against the task — checking completeness, correctness, and code
   quality. Use when the user asks to review a Linear task/issue/ticket, check
   whether an implementation matches its Linear ticket, or review the code for
-  an issue ID like ABC-123. If the task has a branch, checks out that branch
+  an issue ID like ABC-123. First verifies the current repo actually matches
+  the task's project — on a mismatch it stops and helps the user find the
+  right project instead of reviewing the wrong one. If the task has a branch,
+  checks out that branch
   and merges local main into it first so the review runs against latest main,
   and checks whether the task is already implemented on main. Non-code tasks
   (info gathering, decisions, ops) get a required-actions summary from the
@@ -39,6 +42,27 @@ Use the Linear MCP tools:
 3. Note any linked resources on the issue: attached PRs, branch names, related issues, parent/sub-issues.
 
 From this, write down (for yourself) the **requirement checklist**: every concrete behavior, edge case, and acceptance criterion the task demands. If the description is vague ("improve the settings page"), extract what is checkable and flag the rest as unverifiable in the final report.
+
+### Verify you're in the right project
+
+The skill may have been invoked in a repo that has nothing to do with the task. Before touching git, check that the current repository matches the task:
+
+- Compare the task's Linear **team/project name**, attached repo/PR links, branch names, and any file paths or technologies mentioned in the description against the current repo (folder name, `git remote -v`, the actual files present).
+- If the task mentions files, modules, or a stack that clearly don't exist here (e.g. the task is about a Flutter app and this is a Node API), treat it as a mismatch.
+
+On a mismatch, **do not proceed** — no checkout, no merge, no review. Tell the user:
+
+1. Which project the task appears to belong to, and why the current repo doesn't match.
+2. That they should re-run the skill from the right project directory.
+3. Offer to help locate the project on their machine, e.g.:
+
+   ```bash
+   # local — search likely locations for the repo by name
+   mdfind -name "PROJECT_NAME" | grep -v Library | head
+   find ~/Desktop ~/Projects ~/Documents -maxdepth 4 -type d -iname "*PROJECT_NAME*" 2>/dev/null
+   ```
+
+Only continue past this point when the repo plausibly matches the task, or the user explicitly confirms it's the right one.
 
 ### If the task is not a code task
 
@@ -178,6 +202,7 @@ After everything else is done, ask the user whether they want the task branch me
 ## Safety checklist
 
 - [ ] Issue and its comments were read before reviewing code
+- [ ] Current repo verified to match the task's project — stopped on mismatch instead of proceeding
 - [ ] Working tree was clean (or user decided) before switching branches
 - [ ] Task branch merged with local main before the review; conflicts surfaced, never silently resolved
 - [ ] Checked main first for an existing implementation before reviewing the branch
