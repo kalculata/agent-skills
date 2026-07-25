@@ -12,7 +12,9 @@ description: >-
   right project instead of reviewing the wrong one. If the task has a branch,
   checks out that branch
   and merges local main into it first so the review runs against latest main,
-  and checks whether the task is already implemented on main. Non-code tasks
+  and checks whether the task is already implemented on main — if it is and
+  no merge is needed, offers to close the branch's open PR with gh. Non-code
+  tasks
   (info gathering, decisions, ops) get a required-actions summary from the
   issue comments instead of a code review; database changes (adding, removing
   or renaming fields, migrations) get an extra-careful model-vs-migration
@@ -117,8 +119,26 @@ git grep -n "RELEVANT_TERM" main -- .
 
 and read the relevant files on `main` where needed.
 
-- If **all** requirements already exist on `main`, stop: report that the task appears already implemented (with `file:line` evidence per requirement), and that the branch may be redundant or duplicate work. Let the user decide what to do with the branch.
+- If **all** requirements already exist on `main`, stop the review: report that the task appears already implemented (with `file:line` evidence per requirement), and that the branch may be redundant or duplicate work.
 - If only some exist, note which — the review in Step 4 should focus on what the branch actually adds.
+
+### Close a redundant PR
+
+When the task is already implemented on `main` and no merge is needed, check whether the task branch has an open PR and offer to close it:
+
+```bash
+gh pr list --head TASK_BRANCH --state open
+```
+
+If one exists, show it to the user and ask whether to close it. Only on their explicit yes:
+
+```bash
+gh pr close PR_NUMBER --comment "Closing: ISSUE_ID is already implemented on main (see review). No merge needed."
+```
+
+- Close, don't merge — `gh pr close` leaves the branch's commits unmerged, which is the point.
+- Never close a PR without confirmation, and never delete the branch (`--delete-branch`) unless the user asks for that separately.
+- If `gh` is unavailable or not authenticated, tell the user the PR should be closed manually and give them the link.
 
 ## Step 4 — Review the changes against the task
 
@@ -213,3 +233,4 @@ After everything else is done, ask the user whether they want the task branch me
 - [ ] Test results (if run) reported honestly, including failures
 - [ ] Nothing posted to Linear without explicit confirmation
 - [ ] Merge into main + push only after the user's explicit yes
+- [ ] Redundant PRs closed (not merged) only after the user's explicit yes, branch left intact
