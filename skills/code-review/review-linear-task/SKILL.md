@@ -21,12 +21,14 @@ description: >-
   review. Ends with a verdict (Complete / Incomplete / Needs changes) and a
   findings list;
   optionally posts a summary comment to Linear and offers to merge the branch
-  into main and push, each after user confirmation.
+  into main and push, each after user confirmation. Never re-implement on main
+  when the task already has a branch or open PR — always work through the task
+  branch (rebase/merge main, fix there, then merge the branch or PR into main).
 ---
 
 # Review Linear Task
 
-Given a Linear issue, review the code that implements it against what the task actually asks for. The deliverable is a review report — do **not** fix code, commit, or change the issue state unless the user explicitly asks. The only merges in this flow are the two defined below: main into the task branch before reviewing, and (after confirmation) the task branch into main at the end.
+Given a Linear issue, review the code that implements it against what the task actually asks for. The deliverable is a review report — do **not** fix code, commit, or change the issue state unless the user explicitly asks. The only merges in this flow are the two defined below: main into the task branch before reviewing, and (after confirmation) the task branch into main at the end. If the user asks to proceed after the review, always use the task branch — never re-implement the same changes directly on `main` while a task branch or open PR exists.
 
 ## Before you start
 
@@ -34,6 +36,29 @@ Given a Linear issue, review the code that implements it against what the task a
 - Mostly read-only: fetching issues, reading diffs, and reading code are fine. The two allowed repo writes are part of this skill's flow: merging local `main` into the task branch before the review (Step 2), and merging the task branch into `main` + pushing at the very end — the latter **only** after the user confirms. Anything else that writes to Linear (comments, status changes) or to the repo requires explicit user confirmation first.
 - Before switching branches, run `git status` — if the working tree is dirty, stop and ask the user how to handle the uncommitted changes (stash, commit, or abort).
 - If no issue is specified, ask for the issue identifier (e.g. `ENG-123`) or infer it from the current branch name (`eng-123-add-login`) and confirm the guess with the user.
+
+### Never bypass the task branch
+
+If the Linear issue has a **task branch** and/or **open PR**, that branch is the source of truth for the implementation. **Never** re-implement the same work by editing `main` directly — even when:
+
+- The user says "ignore the review and continue" or "just merge it"
+- The branch is stale, behind `main`, or has merge conflicts
+- Review findings suggest fixes or a different approach
+- The branch code looks incomplete or lower quality than a fresh rewrite
+
+**Forbidden:** committing task changes directly to `main` while a task branch or open PR still exists for that issue.
+
+**Required workflow when proceeding after review:**
+
+1. Identify the task branch from the issue (`gitBranchName`, PR `headRefName`, or `git branch -a | grep -i ISSUE_ID`).
+2. Check out the task branch (stash or commit unrelated local changes first).
+3. Merge **local** `main` into the task branch (or rebase onto `main` if that is the repo norm).
+4. Apply any fixes or improvements **on the task branch**, not on `main`.
+5. Push the updated task branch.
+6. Merge into `main` via the existing PR (`gh pr merge`) or `git checkout main && git merge TASK_BRANCH && git push` — only after the user confirms.
+7. If the PR becomes redundant only because the branch was fully superseded, close it with a comment — never leave an open PR while the same work landed on `main` through a separate direct commit.
+
+Direct commits to `main` for a Linear task are allowed **only** when Step 2 found **no** task branch and **no** open PR for that issue.
 
 ## Step 1 — Fetch the task
 
@@ -207,16 +232,25 @@ Only after the user confirms:
 After everything else is done, ask the user whether they want the task branch merged into `main` and pushed. Never merge or push without their explicit yes in this conversation.
 
 - If the verdict was **Needs changes** or **Incomplete**, still ask — but restate the Blocker/Major findings or missing requirements in the question so the user decides with eyes open.
-- On yes:
+- If an **open PR** exists for the task branch, prefer merging through that PR (`gh pr merge PR_NUMBER`) so GitHub records the merge correctly. Use a direct `git merge TASK_BRANCH` into `main` only when there is no PR or the user asks for that path.
+- On yes, follow the **Never bypass the task branch** workflow above — do not rewrite the changes on `main`:
 
   ```bash
+  git stash push -m "wip" -- unrelated paths if needed
+  git checkout TASK_BRANCH
+  git merge main
+  # fix conflicts and review findings on the task branch, then:
+  git push -u origin TASK_BRANCH
+  gh pr merge PR_NUMBER   # when a PR exists
+  # or, when merging locally without a PR:
   git checkout main
   git merge TASK_BRANCH
   git push
+  git stash pop           # if you stashed
   ```
 
-  The branch already contains latest main from Step 2, so this merge should be conflict-free; if it somehow conflicts, abort and report instead of resolving silently.
-- Confirm the result with `git log -1 --oneline` and `git status`, and report what was merged and pushed.
+  The branch should contain latest `main` from Step 2 (or a fresh merge in this step), so the merge into `main` should be conflict-free; if it conflicts, abort and report instead of resolving silently on `main`.
+- Confirm the result with `git log -1 --oneline` and `git status`, and report what was merged and pushed (include PR URL when merged via PR).
 - Do not delete the task branch unless the user asks.
 
 ## Safety checklist
@@ -232,5 +266,6 @@ After everything else is done, ask the user whether they want the task branch me
 - [ ] Every reported bug was verified, not just pattern-matched
 - [ ] Test results (if run) reported honestly, including failures
 - [ ] Nothing posted to Linear without explicit confirmation
-- [ ] Merge into main + push only after the user's explicit yes
+- [ ] Did not re-implement on `main` while a task branch or open PR existed for the issue
+- [ ] Merge into main + push only after the user's explicit yes, through the task branch or its PR
 - [ ] Redundant PRs closed (not merged) only after the user's explicit yes, branch left intact
