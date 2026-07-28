@@ -1,98 +1,97 @@
 ---
 name: implement-linear-task
 description: >-
-  Implement a Linear task end to end: fetch the issue and its comments via the
-  Linear MCP server, build a requirement checklist, verify the current repo is
-  the task's project, check whether the work already exists on main, move the
-  issue to In Progress if it is still in Backlog or Todo, create or check out
-  the task branch (Linear's own branch name), agree a plan with the
-  user, then write the code on that branch. Use when the user asks to
-  implement, build, work on, or start a Linear task/issue/ticket, or to do the
-  work for an issue ID like ABC-123. Never implements on main — always on the
-  task branch, created from up-to-date local main. Non-code tasks (info
-  gathering, decisions, ops) get a required-actions summary from the comments
-  instead of code. Database changes (adding, removing or renaming fields,
-  migrations) get extra care: model, migration and every consumer updated
-  together. Verifies with the repo's own tests/build/lint before committing,
-  reports failures honestly, then — each only after explicit user confirmation
-  — commits, pushes and opens a PR, posts a summary comment to Linear, and
-  offers to merge the branch into main.
+  Implement a Linear task end to end: fetch the issue, its sub-issues, and
+  comments via the Linear MCP server, build a requirement checklist, verify
+  each repo matches its sub-issue, check whether the work already exists on
+  main, move the parent and sub-issues to In Progress when work starts, create
+  or check out per-repo task branches (each sub-issue's own gitBranchName when
+  sub-issues exist), agree a plan with the user, then write the code. Use when
+  the user asks to implement, build, work on, or start a Linear
+  task/issue/ticket, or to do the work for an issue ID like ABC-123. Never
+  implements on main. Handles parent + sub-issue trees and multi-repo work
+  (one branch/PR per sub-issue, linked by sub-issue ID). Moves sub-issues to
+  Done when their work is verified or merged; closes the parent when all
+  sub-issues are done. Non-code tasks get a required-actions summary instead
+  of code. Verifies with tests/build/lint, then — each only after explicit
+  user confirmation — commits, pushes, opens PRs, posts Linear comments, and
+  offers to merge.
 ---
 
 # Implement Linear Task
 
-Given a Linear issue, do the work it describes and land it on a task branch. The deliverable is working, verified code on a branch — plus, only with the user's explicit yes, a pushed PR, a Linear comment, and a merge into `main`.
+Given a Linear issue, do the work it describes and land it on task branch(es). The deliverable is working, verified code on branch(es) — plus, only with the user's explicit yes, pushed PR(s), Linear comment(s), and merge into `main`.
 
 ## Before you start
 
 - You need the Linear MCP server (`mcp__linear-server__*` tools). If its tools are unavailable, stop and tell the user to connect Linear.
 - This skill **writes code**. That's expected. What still needs explicit user confirmation, every time: pushing, opening a PR, commenting on Linear, and merging into `main`.
-- Run `git status` first. If the working tree is dirty, stop and ask the user how to handle the uncommitted changes (stash, commit, or abort) before switching branches.
+- Run `git status` first in every repo you will touch. If any working tree is dirty, stop and ask the user how to handle the uncommitted changes (stash, commit, or abort) before switching branches.
 - If no issue is specified, ask for the issue identifier (e.g. `ENG-123`) or infer it from the current branch name (`eng-123-add-login`) and confirm the guess with the user.
-- The only issue-state change this skill makes is moving a Backlog/Todo issue to In Progress when work starts (Step 3). Never change the assignee or labels, and never set a done/completed state by hand — let the PR and the team's Linear automation do that.
+- Never change assignee or labels.
+
+### Linear status changes this skill makes
+
+| When | What moves | How |
+| --- | --- | --- |
+| Work starts (Step 3) | Parent + every sub-issue still in Backlog/Todo | → **In Progress** |
+| Sub-issue work verified or PR merged (Step 11) | That sub-issue | → **Done** |
+| All sub-issues Done | Parent | → **Done** |
+| No sub-issues; PR merged + user asked to close | Parent | → **Done** (or rely on GitHub automation first, then fix up if stuck) |
+
+Linear **does not cascade** parent ↔ child status, and GitHub integration links PRs **only to issue IDs appearing in the branch name or PR title**. A PR titled `DEV-383: …` closes DEV-383 but leaves sub-issues DEV-400 / DEV-401 open. This skill accounts for that explicitly.
 
 ### Never implement on main
 
-All task code goes on a **task branch**, never on `main` — even when:
-
-- The change is one line
-- The user says "just do it quickly"
-- The branch would be short-lived anyway
-- `main` is already dirty with related work
+All task code goes on a **task branch**, never on `main` — even when the change is one line, the user says "just do it quickly", or `main` already has related work.
 
 **Forbidden:** committing task changes directly to `main`.
 
-If the issue already has a branch or an open PR, that branch is the source of truth — check it out and continue the work there. Do not start a second branch for the same issue, and do not rewrite the work fresh on `main`.
+If an issue already has a branch or an open PR, that branch is the source of truth — check it out and continue the work there. Do not start a second branch for the same issue.
 
-## Step 1 — Fetch the task
+## Step 1 — Fetch the task and sub-issues
 
 Use the Linear MCP tools:
 
-1. Get the issue (`get_issue`) — title, description, state, assignee, labels, estimate, and its `gitBranchName`.
-2. List its comments (`list_comments`) — requirements often get refined in comments; later comments override the original description.
-3. Note linked resources: attached PRs, branch names, related issues, parent/sub-issues. A parent issue often carries context the sub-issue assumes.
+1. Get the issue (`get_issue`, `includeRelations: true`) — title, description, state, assignee, labels, estimate, `gitBranchName`, attachments.
+2. List its comments (`list_comments`) — later comments override the original description.
+3. **Discover sub-issues.** Linear does not always return children on `get_issue`. Also run `list_issues` with queries like the parent ID, or fetch likely child IDs from the parent description. Collect every issue whose `parentId` matches the given issue.
+4. For **each sub-issue**, record: ID, title, description, status, `gitBranchName`, repo hint (e.g. `Repo: music_app_api`), key files.
 
-From this, write down the **requirement checklist**: every concrete behavior, edge case, and acceptance criterion the task demands. This is what you implement against and what you verify against at the end.
+Build two artifacts:
 
-If the description is vague ("improve the settings page"), do not guess your way through it — list what you extracted, state what's ambiguous, and ask the user to resolve the ambiguity before writing code.
+- **Requirement checklist** — every concrete behavior, edge case, and acceptance criterion (parent description + sub-issue descriptions + comments).
+- **Work map** — which sub-issue (or the parent, if no sub-issues) maps to which repo, branch name, and PR identifier.
+
+### Parent vs sub-issue: which ID goes where
+
+| Artifact | Use parent ID | Use sub-issue ID |
+| --- | --- | --- |
+| Git branch name (when sub-issues exist) | No — use each sub-issue's `gitBranchName` | Yes |
+| PR title | Mention parent in body only | **Yes — sub-issue ID in title** |
+| Commit message | Optional secondary mention | **Yes — primary ID for that repo's commit** |
+| Linear PR attachment / auto-link | Unreliable for children if only parent ID used | **Yes — one PR per sub-issue ID** |
+
+When the user gives a **parent** issue and sub-issues exist, implement against the parent's checklist but **track and close work through the sub-issues**.
+
+If the user gives a **sub-issue** directly, treat it as the active work item; still fetch the parent for context and update the parent to Done when all siblings are Done.
 
 ### Verify you're in the right project
 
-The skill may have been invoked in a repo that has nothing to do with the task. Before touching git, check that the current repository matches the task:
+Before touching git, check that the current repository matches the **sub-issue** you are about to implement (or the parent, if there are no sub-issues):
 
-- Compare the task's Linear **team/project name**, attached repo/PR links, branch names, and any file paths or technologies mentioned in the description against the current repo (folder name, `git remote -v`, the actual files present).
-- If the task mentions files, modules, or a stack that clearly don't exist here (e.g. the task is about a Flutter app and this is a Node API), treat it as a mismatch.
+- Compare repo name, `git remote -v`, stack, and file paths in the sub-issue description.
+- If the task spans multiple repos (e.g. API sub-issue + dashboard sub-issue), implement each part from the matching repo — do not put API and dashboard changes on one branch in one repo.
 
-On a mismatch, **do not proceed** — no branch, no code. Tell the user:
-
-1. Which project the task appears to belong to, and why the current repo doesn't match.
-2. That they should re-run the skill from the right project directory.
-3. Offer to help locate the project on their machine, e.g.:
-
-   ```bash
-   # local — search likely locations for the repo by name
-   mdfind -name "PROJECT_NAME" | grep -v Library | head
-   find ~/Desktop ~/Projects ~/Documents -maxdepth 4 -type d -iname "*PROJECT_NAME*" 2>/dev/null
-   ```
-
-Only continue past this point when the repo plausibly matches the task, or the user explicitly confirms it's the right one.
+On a mismatch, **do not proceed** in that repo. Tell the user which repo the sub-issue belongs to and offer to locate it locally.
 
 ### If the task is not a code task
 
-Some tasks aren't code changes at all — gathering information, making a decision, contacting someone, configuring a service, writing docs. If the description and comments show there's nothing to implement in the repo:
-
-1. Read **all** comments carefully — for these tasks the comments usually carry the real state (what's been tried, what's blocked, who's waiting on whom).
-2. Skip the git and implementation steps entirely.
-3. Report back to the user instead:
-   - What the task is actually asking for, in one or two sentences.
-   - Current state based on the comments (done / blocked / waiting on X).
-   - **Actions required** — a concrete numbered list of what needs to happen next, who can do each action (the user, you, or a third party), and which ones you could do now if asked.
-
-Then stop — do not invent code for a task that has no code.
+Read all comments, skip git/implementation, and return a required-actions summary. Then stop.
 
 ## Step 2 — Check whether it's already implemented
 
-Before writing anything, check whether `main` (or the existing task branch) already does what the task asks. Using the requirement checklist, search the code for the behaviors involved:
+Before writing anything, check `main` (or existing task branches) against the requirement checklist:
 
 ```bash
 git grep -n "RELEVANT_TERM" main -- .
@@ -100,211 +99,168 @@ git branch -a | grep -i ISSUE_ID
 gh pr list --search "ISSUE_ID" --state all
 ```
 
-and read the relevant files where the search points.
+Do this **per sub-issue** when sub-issues exist.
 
-- If **all** requirements already exist, stop and report it with `file:line` evidence per requirement. Ask the user whether the task should just be closed instead — don't re-implement working code.
-- If **some** exist, say which. Your implementation covers only the gap.
-- If an existing branch or open PR already has partial work, continue **on that branch** rather than starting over.
+- If **all** requirements already exist, stop with `file:line` evidence. Mark the sub-issue(s) and parent Done if the user confirms.
+- If **some** exist, implement only the gap.
+- If an existing branch or open PR already has partial work for a sub-issue, continue on that branch.
 
-## Step 3 — Move the issue to In Progress, then set up the branch
+## Step 3 — Move issues to In Progress, then set up branches
 
-### Move the issue to In Progress
+### Move to In Progress
 
-Do this **before** writing any code, so the board reflects that the task is being worked on and so the team's Linear automation can advance it correctly when the PR is opened later.
+Do this **before** writing code.
 
-1. Read the issue's current status from Step 1 (or `get_issue_status`).
-2. If the status is **Backlog** or **Todo** (any status whose type is `backlog` or `unstarted`), move it to In Progress:
+1. `list_issue_statuses(team: TEAM)` — find the started-type status (prefer the one named "In Progress").
+2. Move the **parent** to In Progress if its status type is `backlog` or `unstarted`.
+3. Move **every sub-issue** to In Progress if its status type is `backlog` or `unstarted`.
+4. Leave issues already In Progress, In Review, Done, Canceled, or Duplicate unchanged — never move backwards.
 
-   ```
-   list_issue_statuses(team: TEAM)   # find the started-type status for this team
-   save_issue(id: ISSUE_ID, state: "In Progress")
-   ```
+If a status update fails (permissions), say so and continue.
 
-3. Pick the team's own started-type status — workspaces rename it (`In Progress`, `Doing`, `Started`). Use the status whose type is `started`; if the team has several, prefer the one literally named "In Progress", otherwise the earliest in the board order, and tell the user which one you picked.
+### Set up task branch(es)
 
-Rules:
-
-- Only move **forward from Backlog/Todo**. If the issue is already In Progress, In Review, Done, Canceled, or Duplicate, leave it exactly as it is — never move an issue backwards.
-- This is the one status change the skill makes on its own; no confirmation needed. Do **not** set In Review or Done by hand at any point — opening the PR is what should trigger the next transition, via the team's automation.
-- If the status change fails (permissions, unknown state), say so and continue with the implementation. A failed board update is not a reason to stop working.
-
-### Set up the task branch
-
-Start from an up-to-date `main`:
+For **each repo** in the work map, from up-to-date `main`:
 
 ```bash
 git checkout main
 git pull
+git checkout -b SUB_ISSUE_GIT_BRANCH_NAME   # prefer sub-issue gitBranchName
 ```
-
-Then either resume the existing branch or create Linear's:
-
-```bash
-# existing branch for the issue
-git checkout TASK_BRANCH
-git merge main
-
-# or a new one — prefer the issue's own gitBranchName from Step 1
-git checkout -b TASK_BRANCH
-```
-
-- Use the issue's `gitBranchName` verbatim when creating a branch, so Linear links the branch and PR to the issue automatically. Only invent a name (`ISSUE_ID-short-description`, lowercase) if the issue has none.
-- If merging `main` into an existing branch **conflicts**, do not resolve silently: run `git merge --abort`, show the user the conflicting files, and ask whether they want you to resolve them or handle it themselves.
-- If `git pull` fails (no remote, no network), continue from local `main` and say so.
-
-## Step 4 — Plan before writing code
-
-Read enough of the codebase to implement in its idiom, not in the abstract: the modules the task touches, their callers, the existing patterns for the same kind of work (how other endpoints/screens/migrations in this repo are written), and the test conventions.
-
-Then show the user a short plan **before** editing:
-
-- Which files you'll add or change, and what each change does.
-- Which requirement from the checklist each change satisfies.
-- Anything the task left ambiguous, with the assumption you intend to make.
-- Whether the change touches the database, public APIs, or anything else with blast radius.
-
-Keep it short — a dozen lines, not a design doc. Wait for the user's go-ahead if the plan involves an ambiguity, a schema change, or a materially different approach than the task described. For a small, unambiguous task, state the plan and proceed.
-
-## Step 5 — Implement
-
-Write the code on the task branch, following the repo's existing conventions — naming, file layout, error handling, comment density, test style. Match the surrounding code rather than importing patterns from elsewhere.
 
 Rules:
 
-- **Implement the task, not around it.** Every requirement on the checklist, and nothing beyond it. No drive-by refactors, no unrelated file changes, no speculative abstraction — if you spot an unrelated problem, note it for the report instead of fixing it.
-- **Handle the edge cases the task names**, plus the obvious ones it doesn't: empty input, error paths, permissions, concurrency.
-- **Add or update tests** when the repo has a test suite, covering the new behavior — not just the happy path.
-- **Update the callers.** Changed signatures, defaults, or shapes mean every call site, serializer, fixture, and doc that depends on them changes too. Grep for them; don't assume.
-- **No secrets in code.** Keys, tokens, and credentials go in the repo's existing config/env mechanism.
+- **Sub-issues exist:** use each sub-issue's `gitBranchName` in its repo — not the parent's branch name. Example: DEV-401 branch in `music_app_api`, DEV-400 branch in `music_app_dashboard`, even when the user invoked the skill with parent DEV-383.
+- **No sub-issues:** use the parent issue's `gitBranchName`.
+- **Same repo, multiple sub-issues:** one branch per sub-issue unless an open PR already exists for one of them.
+- If merging `main` into an existing branch conflicts, abort and ask the user.
+
+State the work map in the plan (Step 4): repo → sub-issue ID → branch name.
+
+## Step 4 — Plan before writing code
+
+Read enough of each codebase to implement in its idiom. Show a short plan:
+
+- Repos and sub-issues involved
+- Files to add or change per repo
+- Which requirement each change satisfies
+- Deploy order when API + client both change (API first)
+- Ambiguities and assumptions
+
+Wait for go-ahead on ambiguities, schema changes, or materially different approaches. For small unambiguous tasks, state the plan and proceed.
+
+## Step 5 — Implement
+
+Write code on the correct task branch per repo. Follow existing conventions. Implement the checklist only — no drive-by refactors.
+
+- Handle named edge cases plus obvious ones (empty input, errors, permissions).
+- Add or update tests when the repo has a test suite.
+- Update every caller when signatures or response shapes change.
+- No secrets in code.
 
 ### Extra attention: database changes
 
-If the task touches the database — migrations, schema files, model/entity definitions, adding, removing, or renaming fields — treat it as high-risk and get it right field by field:
-
-- **Model ↔ migration ↔ task must agree.** Field names, types, nullability, defaults, constraints, indexes, and relations must match across the model/entity definition, the migration, and what the task asked for.
-- **Added fields** — correct type and size for the data. Nullable or defaulted so existing rows and older app versions don't break on deploy. Indexed if it will be queried or filtered on.
-- **Removed fields** — find everything still reading or writing them (queries, serializers, forms, API responses, background jobs) and update it. If dropping the column loses data that matters, migrate or archive it first.
-- **Renames** — do a real rename that preserves data, never drop-and-add.
-- **Migration safety** — provide a down/rollback path, and consider what the migration does to a table with existing production data (backfills, locks on large tables).
-- **Every consumer updated** — grep the whole repo for the old and new field names; raw SQL, fixtures, seeds, and tests count.
-
-If any of this is unclear from the task, ask before migrating. A wrong migration is expensive to undo.
+Model ↔ migration ↔ task must agree. Every consumer updated. Ask before migrating if unclear.
 
 ## Step 6 — Verify
 
-Do not report the task as done on the strength of having written the code.
+Do not report done on unverified code.
 
-1. Run the repo's test suite, or the relevant subset if it's slow.
-2. Run the build, type-check, and linter the repo uses.
-3. Where practical, exercise the actual behavior the task describes (run the app, hit the endpoint, run a small script) rather than only asserting it should work.
-4. Walk the requirement checklist one item at a time and confirm each is genuinely implemented, with the `file:line` to prove it.
+1. Run tests, build, and linter **per repo touched**.
+2. Exercise the behavior when practical.
+3. Walk the checklist with `file:line` evidence **per sub-issue**.
 
-Report results honestly. If tests fail, say so and show the output — fix the ones your change caused; for pre-existing failures, say they were already failing and leave them alone unless the user asks.
+Report failures honestly.
 
 ## Step 7 — Commit
 
-Commit on the task branch with a message that matches the repo's existing commit style (`git log --oneline -20` to see it). If the `github-commit` skill is available, follow it for message style and staging.
+Commit on each task branch. Match the repo's commit style.
+
+- Stage only task files — never `git add -A` when unrelated changes exist.
+- **Include the sub-issue ID** in the commit message when sub-issues exist (e.g. `DEV-401: …`). Mention the parent ID optionally in the body.
+
+## Step 8 — Push and open PR(s)
+
+Ask the user first. Only on their explicit yes.
+
+Push and open **one PR per sub-issue** (one per repo):
 
 ```bash
-git add PATHS          # stage only files that belong to this task
-git commit
+git push -u origin SUB_ISSUE_BRANCH
+gh pr create --base main --head SUB_ISSUE_BRANCH \
+  --title "SUB_ISSUE_ID: short title" \
+  --body "..."
 ```
 
-- Stage deliberately — never `git add -A` when the tree has unrelated changes.
-- Include the issue identifier in the message if that's the repo's convention.
-- Split into multiple commits if the work has genuinely distinct parts; one commit is fine otherwise.
+PR rules:
 
-## Step 8 — Push and open a PR
+- **Title must contain the sub-issue ID** (e.g. `DEV-401: …`), not only the parent ID — so Linear attaches the PR to the correct issue and automation can advance it.
+- Body: what changed, how verified, link to the **sub-issue** URL, mention parent issue if helpful, note deploy order for multi-repo work.
+- After opening, verify in Linear that the PR attachment landed on the **sub-issue**. If only the parent moved, tell the user — do not assume children updated.
+- If `gh` is unavailable, give the compare URL.
 
-Ask the user first. Only on their explicit yes:
+### Multi-repo deploy order
 
-```bash
-git push -u origin TASK_BRANCH
-gh pr create --base main --head TASK_BRANCH --title "ISSUE_ID: TITLE" --body "..."
-```
-
-- The PR body should state what the task asked for, what changed, and how it was verified. Link the Linear issue.
-- Including the issue identifier in the branch name or PR title lets Linear link the PR to the issue automatically — that link is also what lets the team's automation advance the issue (typically In Progress → In Review) once the PR opens. Do not set that status by hand; if the issue doesn't move after the PR is opened, mention it to the user rather than forcing it.
-- If `gh` is unavailable or unauthenticated, push the branch and give the user the compare URL to open the PR manually.
-- If a PR already exists for the branch, push to it rather than opening a second one.
+When API and dashboard both change, state in both PR bodies: **merge and deploy API before dashboard**.
 
 ## Step 9 — Report
 
-Present the result to the user in this format:
-
 ```markdown
-## Implemented: ISSUE_ID — ISSUE_TITLE
+## Implemented: PARENT_ID — PARENT_TITLE
 
 **Status**: Complete / Partial / Blocked
 
+### Sub-issues
+- ✅ SUB_ID — repo — PR URL — status
+- ⚠️ SUB_ID — what's left
+
 ### Requirements
-- ✅ REQUIREMENT — where it's implemented (`file:line`)
-- ⚠️ REQUIREMENT — what's done and what's left
-- ❌ REQUIREMENT — not implemented, and why
+- ✅ REQUIREMENT — `file:line` (SUB_ID if applicable)
 
 ### Changes
-- `path/to/file` — what changed and why
+- `repo/path` — what changed
 
 ### Verification
-- Tests / build / lint commands run and their actual results, failures included
+- Commands run and results per repo
 
 ### Notes
-- Assumptions made, unrelated problems spotted (not fixed), follow-ups worth their own task
+- Assumptions, deploy order, automation gaps
 ```
 
-Status rules:
+## Step 10 — Close sub-issues and parent in Linear
 
-- **Complete** — every requirement ✅ and verification passed.
-- **Partial** — some requirements ⚠️/❌; say exactly which and what's needed to finish.
-- **Blocked** — couldn't proceed (missing access, unresolved ambiguity, broken build); say what unblocks it.
+After verification — or after the user confirms merge — update Linear statuses explicitly. **Do not rely on parent PR automation to close sub-issues.**
 
-Never report Complete on unverified code.
+1. For each sub-issue whose work is verified or merged: `save_issue(id: SUB_ID, state: "Done")`.
+2. Re-fetch sub-issues. When **all** are Done, `save_issue(id: PARENT_ID, state: "Done")`.
+3. If GitHub automation already closed the parent but sub-issues are still open, close the sub-issues now and explain why they were stuck.
 
-## Step 10 — Optional: post a summary to Linear
-
-Only after the user confirms:
-
-- Post a comment on the issue (`save_comment`) with what was implemented, the branch and PR link, and how it was verified — trimmed to what teammates need.
-- Do **not** change the issue's state again here, and never touch the assignee or labels. The only status move this skill makes is Backlog/Todo → In Progress in Step 3; everything after that belongs to the PR automation or to the user.
+When posting an optional summary comment (`save_comment`), do it on the **sub-issue** (and parent if useful). Do not change assignee or labels.
 
 ## Step 11 — Offer to merge into main
 
-After everything else, ask whether the user wants the task branch merged into `main` and pushed. Never merge or push to `main` without their explicit yes in this conversation.
+Ask the user before merging. Never merge without explicit yes.
 
-- If the status was **Partial** or **Blocked**, still ask — but restate what's missing in the question so the user decides with eyes open.
-- Prefer merging through the PR so GitHub records it correctly:
-
-  ```bash
-  gh pr merge PR_NUMBER
-  ```
-
-- Only when there is no PR, or the user asks for that path:
-
-  ```bash
-  git checkout main
-  git merge TASK_BRANCH
-  git push
-  ```
-
-- The branch already contains latest `main` from Step 3, so this should be conflict-free. If it conflicts, abort and report — never resolve conflicts silently on `main`.
-- Confirm with `git log -1 --oneline` and `git status`, and report what was merged and pushed (include the PR URL when merged via PR).
-- Do not delete the task branch unless the user asks.
+- Merge **API PRs before client/dashboard PRs** when both exist.
+- Prefer `gh pr merge` over local merge.
+- After merge, run Step 10 if not already done — merged sub-issues → Done, then parent when all children are Done.
+- Confirm with `git log -1 --oneline` and `git status` per repo.
+- Do not delete task branches unless the user asks.
 
 ## Safety checklist
 
-- [ ] Issue and all its comments read before any code was written
-- [ ] Current repo verified to match the task's project — stopped on mismatch instead of building the wrong thing
-- [ ] Checked whether the task was already implemented before re-implementing it
-- [ ] Working tree was clean (or the user decided) before switching branches
-- [ ] All work done on the task branch, created from up-to-date `main` — nothing committed to `main`
-- [ ] Existing branch/PR for the issue continued, not duplicated with a second branch
-- [ ] Plan shown to the user before editing; ambiguities raised rather than guessed
-- [ ] Non-code tasks answered with a required-actions summary, not forced into code
-- [ ] Only files belonging to this task changed and staged
-- [ ] Database changes: model ↔ migration ↔ task agree, and every consumer updated
-- [ ] Tests/build/lint actually run, results reported honestly including failures
-- [ ] Every requirement confirmed with `file:line` evidence before claiming Complete
-- [ ] Nothing pushed, no PR opened, nothing posted to Linear without explicit confirmation
-- [ ] Backlog/Todo issue moved to In Progress before coding; already-started issues left alone, none moved backwards
-- [ ] No status set by hand beyond that — In Review/Done left to the PR automation; assignee and labels untouched
-- [ ] Merge into `main` + push only after the user's explicit yes, through the task branch or its PR
+- [ ] Parent issue, all sub-issues, and all comments read before coding
+- [ ] Work map built: sub-issue → repo → branch → PR ID
+- [ ] Each repo verified against its sub-issue before coding there
+- [ ] Checked whether work already exists before re-implementing
+- [ ] Working trees clean (or user decided) before branching
+- [ ] All work on task branches from up-to-date `main` — nothing on `main`
+- [ ] Sub-issue `gitBranchName` used per repo (not parent branch when sub-issues exist)
+- [ ] Parent + Backlog/Todo sub-issues moved to In Progress before coding
+- [ ] PR titles use **sub-issue IDs** when sub-issues exist
+- [ ] Verified Linear PR attachments landed on sub-issues, not just parent
+- [ ] Sub-issues marked Done after verify/merge; parent Done when all children Done
+- [ ] Tests/build/lint run per repo; results reported honestly
+- [ ] Every requirement has `file:line` evidence before claiming Complete
+- [ ] Nothing pushed, no PR opened, no merge without explicit user confirmation
+- [ ] Assignee and labels untouched
