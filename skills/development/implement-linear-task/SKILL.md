@@ -3,8 +3,9 @@ name: implement-linear-task
 description: >-
   Implement a Linear task end to end: fetch the issue and its comments via the
   Linear MCP server, build a requirement checklist, verify the current repo is
-  the task's project, check whether the work already exists on main, create or
-  check out the task branch (Linear's own branch name), agree a plan with the
+  the task's project, check whether the work already exists on main, move the
+  issue to In Progress if it is still in Backlog or Todo, create or check out
+  the task branch (Linear's own branch name), agree a plan with the
   user, then write the code on that branch. Use when the user asks to
   implement, build, work on, or start a Linear task/issue/ticket, or to do the
   work for an issue ID like ABC-123. Never implements on main — always on the
@@ -28,7 +29,7 @@ Given a Linear issue, do the work it describes and land it on a task branch. The
 - This skill **writes code**. That's expected. What still needs explicit user confirmation, every time: pushing, opening a PR, commenting on Linear, and merging into `main`.
 - Run `git status` first. If the working tree is dirty, stop and ask the user how to handle the uncommitted changes (stash, commit, or abort) before switching branches.
 - If no issue is specified, ask for the issue identifier (e.g. `ENG-123`) or infer it from the current branch name (`eng-123-add-login`) and confirm the guess with the user.
-- Never change the issue's state, assignee, or labels. This skill's only Linear write is an optional summary comment at the end.
+- The only issue-state change this skill makes is moving a Backlog/Todo issue to In Progress when work starts (Step 3). Never change the assignee or labels, and never set a done/completed state by hand — let the PR and the team's Linear automation do that.
 
 ### Never implement on main
 
@@ -105,7 +106,29 @@ and read the relevant files where the search points.
 - If **some** exist, say which. Your implementation covers only the gap.
 - If an existing branch or open PR already has partial work, continue **on that branch** rather than starting over.
 
-## Step 3 — Set up the task branch
+## Step 3 — Move the issue to In Progress, then set up the branch
+
+### Move the issue to In Progress
+
+Do this **before** writing any code, so the board reflects that the task is being worked on and so the team's Linear automation can advance it correctly when the PR is opened later.
+
+1. Read the issue's current status from Step 1 (or `get_issue_status`).
+2. If the status is **Backlog** or **Todo** (any status whose type is `backlog` or `unstarted`), move it to In Progress:
+
+   ```
+   list_issue_statuses(team: TEAM)   # find the started-type status for this team
+   save_issue(id: ISSUE_ID, state: "In Progress")
+   ```
+
+3. Pick the team's own started-type status — workspaces rename it (`In Progress`, `Doing`, `Started`). Use the status whose type is `started`; if the team has several, prefer the one literally named "In Progress", otherwise the earliest in the board order, and tell the user which one you picked.
+
+Rules:
+
+- Only move **forward from Backlog/Todo**. If the issue is already In Progress, In Review, Done, Canceled, or Duplicate, leave it exactly as it is — never move an issue backwards.
+- This is the one status change the skill makes on its own; no confirmation needed. Do **not** set In Review or Done by hand at any point — opening the PR is what should trigger the next transition, via the team's automation.
+- If the status change fails (permissions, unknown state), say so and continue with the implementation. A failed board update is not a reason to stop working.
+
+### Set up the task branch
 
 Start from an up-to-date `main`:
 
@@ -201,7 +224,7 @@ gh pr create --base main --head TASK_BRANCH --title "ISSUE_ID: TITLE" --body "..
 ```
 
 - The PR body should state what the task asked for, what changed, and how it was verified. Link the Linear issue.
-- Including the issue identifier in the branch name or PR title lets Linear link the PR to the issue automatically.
+- Including the issue identifier in the branch name or PR title lets Linear link the PR to the issue automatically — that link is also what lets the team's automation advance the issue (typically In Progress → In Review) once the PR opens. Do not set that status by hand; if the issue doesn't move after the PR is opened, mention it to the user rather than forcing it.
 - If `gh` is unavailable or unauthenticated, push the branch and give the user the compare URL to open the PR manually.
 - If a PR already exists for the branch, push to it rather than opening a second one.
 
@@ -242,7 +265,7 @@ Never report Complete on unverified code.
 Only after the user confirms:
 
 - Post a comment on the issue (`save_comment`) with what was implemented, the branch and PR link, and how it was verified — trimmed to what teammates need.
-- Do **not** change the issue's state, assignee, or labels, even if the work is finished. That's the user's call to make in Linear.
+- Do **not** change the issue's state again here, and never touch the assignee or labels. The only status move this skill makes is Backlog/Todo → In Progress in Step 3; everything after that belongs to the PR automation or to the user.
 
 ## Step 11 — Offer to merge into main
 
@@ -282,5 +305,6 @@ After everything else, ask whether the user wants the task branch merged into `m
 - [ ] Tests/build/lint actually run, results reported honestly including failures
 - [ ] Every requirement confirmed with `file:line` evidence before claiming Complete
 - [ ] Nothing pushed, no PR opened, nothing posted to Linear without explicit confirmation
-- [ ] Issue state/assignee/labels left untouched
+- [ ] Backlog/Todo issue moved to In Progress before coding; already-started issues left alone, none moved backwards
+- [ ] No status set by hand beyond that — In Review/Done left to the PR automation; assignee and labels untouched
 - [ ] Merge into `main` + push only after the user's explicit yes, through the task branch or its PR
