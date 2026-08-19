@@ -4,41 +4,19 @@ A personal collection of [agent skills](https://docs.claude.com/en/docs/claude-c
 
 ## Skills
 
-Skills live under `skills/`, grouped by category. Each folder holds one skill as a `SKILL.md` file.
+Skills live under `skills/`, grouped by category. Each folder holds one skill as a `SKILL.md` file — see the file itself for the full details of what it does.
 
 | Category | Skill | What it does |
 | --- | --- | --- |
-| `development` | [implement-linear-task](./skills/development/implement-linear-task/SKILL.md) | Implement a Linear task end to end: fetch the issue and comments via the Linear MCP server, build a requirement checklist, verify the current repo matches the task's project, check whether the work already exists on main, move a Backlog/Todo issue to In Progress, then create or resume the task branch (Linear's own `gitBranchName`) off up-to-date main and write the code there — never on main. Agrees a plan first, follows the repo's conventions, treats database changes as high-risk, and verifies with the repo's own tests/build/lint before committing. Non-code tasks get a required-actions summary instead. Ends with a Complete/Partial/Blocked report; can push + open a PR, post a summary to Linear, and merge into main, each after confirmation. |
-| `development` | [review-linear-task](./skills/development/review-linear-task/SKILL.md) | Review the implementation of a Linear task: fetch the issue and comments via the Linear MCP server, build a requirement checklist, verify the current repo matches the task's project (stopping to help locate the right one on a mismatch), check out the task branch and merge local main into it, verify the task isn't already implemented on main (offering to `gh pr close` a redundant PR if it is), then review the changes for completeness, correctness, scope, regressions, and tests — with extra scrutiny on database/schema changes. Non-code tasks get a required-actions summary from the comments instead. Ends with a Complete/Incomplete/Needs-changes verdict; can post the review to Linear and merge the branch into main + push, each after confirmation. |
-| `devops` | [setup-new-server](./skills/devops/setup-new-server/SKILL.md) | Harden a fresh Ubuntu/Debian VPS: non-root sudo user, SSH key auth, non-standard SSH port, UFW, fail2ban, unattended upgrades, and basic sysctl hardening. |
-| `devops` | [connect-repo-to-server](./skills/devops/connect-repo-to-server/SKILL.md) | Connect a server to a private GitHub repo via a per-repo deploy key, then clone it. Runs all server-side steps over SSH; the only manual step is pasting the key into GitHub. |
-| `git` | [github-commit](./skills/git/github-commit/SKILL.md) | Stage and commit changes with a message that matches the repo's existing commit style. No co-author trailers, no pushes unless asked. |
-| `security` | [webapp-security-audit](./skills/security/webapp-security-audit/SKILL.md) | Audit a webapp repo: vulnerable/outdated dependencies, secrets in the working tree and git history (with history-rewrite proposal), and common hardening issues. Ends with a Critical/Medium/Small report saying how to fix each issue and who can fix it. |
-| `security` | [mobileapp-security-audit](./skills/security/mobileapp-security-audit/SKILL.md) | Audit a mobile app repo (Flutter-first): vulnerable/outdated dependencies, leaked keystores and API keys in the working tree, bundled assets and git history, plus mobile hardening (insecure storage, cleartext traffic, disabled TLS checks, debuggable builds, missing obfuscation) and a Dart source review for injection, crypto misuse, and client-side-only authorization. Same Critical/Medium/Small report format. |
-
-## Structure
-
-```
-skills/
-├── development/
-│   ├── implement-linear-task/
-│   │   └── SKILL.md
-│   └── review-linear-task/
-│       └── SKILL.md
-├── devops/
-│   ├── setup-new-server/
-│   │   └── SKILL.md
-│   └── connect-repo-to-server/
-│       └── SKILL.md
-├── git/
-│   └── github-commit/
-│       └── SKILL.md
-└── security/
-    ├── webapp-security-audit/
-    │   └── SKILL.md
-    └── mobileapp-security-audit/
-        └── SKILL.md
-```
+| `development` | [implement-linear-task](./skills/development/implement-linear-task/SKILL.md) | Implement a Linear task end to end: fetch the issue, plan, work on the task branch (never main), verify, then commit/PR/report back to Linear after confirmation. |
+| `development` | [review-linear-task](./skills/development/review-linear-task/SKILL.md) | Review a Linear task's implementation against its requirements and end with a Complete/Incomplete/Needs-changes verdict; can post the review to Linear and merge after confirmation. |
+| `devops` | [setup-new-server](./skills/devops/setup-new-server/SKILL.md) | Harden a fresh Ubuntu/Debian VPS: sudo user, SSH keys and non-standard port, UFW, fail2ban, unattended upgrades, sysctl hardening. |
+| `devops` | [connect-repo-to-server](./skills/devops/connect-repo-to-server/SKILL.md) | Give a server access to a private GitHub repo via a per-repo deploy key, then clone it. Only manual step is pasting the key into GitHub. |
+| `frontend` | [huzaifa](./skills/frontend/huzaifa/SKILL.md) | Huzaifa's personal UI taste for webapps: big heading + muted subtitle for section titles, and light/dark mode from day one via theme tokens. |
+| `general` | [unslop](./skills/general/unslop/SKILL.md) | Remove AI-writing tells from prose using a catalog of 36 patterns, with scope rules and per-format calibration. |
+| `git` | [github-commit](./skills/git/github-commit/SKILL.md) | Stage and commit changes with a message matching the repo's existing style. No co-author trailers, no pushes unless asked. |
+| `security` | [webapp-security-audit](./skills/security/webapp-security-audit/SKILL.md) | Audit a webapp repo for vulnerable dependencies, leaked secrets (including git history), and hardening issues. Ends with a Critical/Medium/Small report. |
+| `security` | [mobileapp-security-audit](./skills/security/mobileapp-security-audit/SKILL.md) | Same audit for mobile apps (Flutter-first), plus mobile hardening checks and a Dart source review. |
 
 ## Using a skill
 
