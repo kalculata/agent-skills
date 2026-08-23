@@ -16,6 +16,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    description TEXT CHECK (description IS NULL OR length(description) <= 255),
     created_at TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS projects_name_ci ON projects (lower(name));
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT NOT NULL DEFAULT 'backlog'
         CHECK (status IN ('backlog', 'in_progress', 'done')),
     due_date TEXT,
+    description TEXT CHECK (description IS NULL OR length(description) <= 255),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -42,6 +44,7 @@ def connect():
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(SCHEMA)
+    migrate(db)
     db.execute(
         "INSERT INTO projects (name, created_at) SELECT ?, ? "
         "WHERE NOT EXISTS (SELECT 1 FROM projects WHERE lower(name) = lower(?))",
@@ -49,6 +52,25 @@ def connect():
     )
     db.commit()
     return db
+
+
+def migrate(db):
+    """Add columns introduced after the first release to existing databases."""
+    for table in ("projects", "tasks"):
+        cols = {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}
+        if "description" not in cols:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN description TEXT "
+                       "CHECK (description IS NULL OR length(description) <= 255)")
+
+
+def clean_desc(text):
+    """Normalise a --desc value: None = untouched, '' = clear, else max 255 chars."""
+    if text is None:
+        return None
+    text = text.strip()
+    if len(text) > 255:
+        die(f"description is {len(text)} chars, max is 255")
+    return text or None
 
 
 def die(msg):
@@ -106,12 +128,13 @@ def get_project(db, name):
     ).fetchone()
 
 
-def get_or_create_project(db, name):
+def get_or_create_project(db, name, desc=None):
     row = get_project(db, name)
     if row:
         return row
     db.execute(
-        "INSERT INTO projects (name, created_at) VALUES (?, ?)", (name.strip(), now())
+        "INSERT INTO projects (name, description, created_at) VALUES (?, ?, ?)",
+        (name.strip(), clean_desc(desc), now()),
     )
     db.commit()
     print(f"created project '{name.strip()}'")
@@ -172,9 +195,9 @@ def cmd_add(db, a):
     due = parse_date(a.due) or None
     ts = now()
     cur = db.execute(
-        "INSERT INTO tasks (project_id, title, status, due_date, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (project["id"], a.title.strip(), a.status, due, ts, ts),
+        "INSERT INTO tasks (project_id, title, status, due_date, description, "
+        "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (project["id"], a.title.strip(), a.status, due, clean_desc(a.desc), ts, ts),
     )
     db.commit()
     print("added " + fmt_task(get_task(db, cur.lastrowid), with_project=True))
@@ -271,13 +294,23 @@ def cmd_update(db, a):
         sets.append("due_date = ?"); params.append(parse_date(a.due) or None)
     if a.project is not None:
         sets.append("project_id = ?"); params.append(get_or_create_project(db, a.project)["id"])
+    if a.desc is not None:
+        sets.append("description = ?"); params.append(clean_desc(a.desc))
     if not sets:
-        die("nothing to update (use --title, --status, --due, --project)")
+        die("nothing to update (use --title, --status, --due, --project, --desc)")
     sets.append("updated_at = ?"); params.append(now())
     params.append(a.id)
     db.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?", params)
     db.commit()
     print(fmt_task(get_task(db, a.id), with_project=True))
+
+
+def cmd_show(db, a):
+    t = get_task(db, a.id)
+    print(fmt_task(t, with_project=True))
+    if t["description"]:
+        print("  " + t["description"])
+    print(f"  created {t['created_at']}, updated {t['updated_at']}")
 
 
 def cmd_delete(db, a):
@@ -289,7 +322,7 @@ def cmd_delete(db, a):
 
 def cmd_projects(db, a):
     rows = db.execute(
-        """SELECT p.name,
+        """SELECT p.name, p.description,
                   SUM(t.status = 'backlog') AS backlog,
                   SUM(t.status = 'in_progress') AS in_progress,
                   SUM(t.status = 'done') AS done
@@ -299,12 +332,35 @@ def cmd_projects(db, a):
     for r in rows:
         print(f"{r['name']:<24} backlog {r['backlog'] or 0:>3}  "
               f"in_progress {r['in_progress'] or 0:>3}  done {r['done'] or 0:>3}")
+        if r["description"]:
+            print(f"    {r['description']}")
 
 
 def cmd_add_project(db, a):
     if get_project(db, a.name):
         die(f"project '{a.name}' already exists")
-    get_or_create_project(db, a.name)
+    get_or_create_project(db, a.name, a.desc)
+
+
+def cmd_update_project(db, a):
+    p = get_project(db, a.name)
+    if not p:
+        die(f"no project named '{a.name}'")
+    sets, params = [], []
+    if a.rename is not None:
+        other = get_project(db, a.rename)
+        if other and other["id"] != p["id"]:
+            die(f"project '{a.rename}' already exists")
+        sets.append("name = ?"); params.append(a.rename.strip())
+    if a.desc is not None:
+        sets.append("description = ?"); params.append(clean_desc(a.desc))
+    if not sets:
+        die("nothing to update (use --rename, --desc)")
+    params.append(p["id"])
+    db.execute(f"UPDATE projects SET {', '.join(sets)} WHERE id = ?", params)
+    db.commit()
+    p = db.execute("SELECT * FROM projects WHERE id = ?", (p["id"],)).fetchone()
+    print(p["name"] + (f": {p['description']}" if p["description"] else ""))
 
 
 def main():
@@ -316,6 +372,7 @@ def main():
     s.add_argument("--project", "-p", default=DEFAULT_PROJECT)
     s.add_argument("--due", "-d", help="YYYY-MM-DD, today, tomorrow, friday, 'next monday'")
     s.add_argument("--status", "-s", choices=STATUSES, default="backlog")
+    s.add_argument("--desc", help="short description, max 255 chars")
     s.set_defaults(fn=cmd_add)
 
     s = sub.add_parser("list", help="list open tasks (grouped by project)")
@@ -348,7 +405,12 @@ def main():
     s.add_argument("--status", "-s", choices=STATUSES)
     s.add_argument("--due", "-d", help="date, or 'none' to clear")
     s.add_argument("--project", "-p")
+    s.add_argument("--desc", help="short description, max 255 chars; '' to clear")
     s.set_defaults(fn=cmd_update)
+
+    s = sub.add_parser("show", help="show one task with its description")
+    s.add_argument("id", type=int)
+    s.set_defaults(fn=cmd_show)
 
     s = sub.add_parser("delete", help="delete a task permanently")
     s.add_argument("id", type=int)
@@ -358,7 +420,14 @@ def main():
 
     s = sub.add_parser("add-project", help="create an empty project")
     s.add_argument("name")
+    s.add_argument("--desc", help="short description, max 255 chars")
     s.set_defaults(fn=cmd_add_project)
+
+    s = sub.add_parser("update-project", help="rename a project or change its description")
+    s.add_argument("name")
+    s.add_argument("--rename")
+    s.add_argument("--desc", help="short description, max 255 chars; '' to clear")
+    s.set_defaults(fn=cmd_update_project)
 
     a = p.parse_args()
     a.fn(connect(), a)

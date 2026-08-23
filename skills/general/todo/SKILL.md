@@ -22,7 +22,7 @@ If `setup.sh` fails, show the error and stop. Common cause is `python3` missing 
 ## CLI
 
 ```bash
-todo.py add "Title" [--project NAME] [--due DATE] [--status S]   # project defaults to Personal, created if missing
+todo.py add "Title" [--project NAME] [--due DATE] [--status S] [--desc TEXT]   # project defaults to Personal, created if missing
 todo.py list [--project NAME] [--status S] [--search TEXT] [--all] # open tasks grouped by project; --all includes done
 todo.py today                      # open tasks due today, plus overdue
 todo.py week                       # open tasks due this week (Mon-Sun), plus overdue
@@ -31,13 +31,15 @@ todo.py completed                  # tasks marked done this week
 todo.py find TEXT                  # title search across all statuses, one line per task with project
 todo.py start ID [ID...]           # -> in_progress
 todo.py done ID [ID...]            # -> done
-todo.py update ID [--title T] [--status S] [--due DATE|none] [--project NAME]
+todo.py show ID                    # one task with its description and timestamps
+todo.py update ID [--title T] [--status S] [--due DATE|none] [--project NAME] [--desc TEXT|""]
 todo.py delete ID                  # permanent
 todo.py projects                   # projects with counts per status
-todo.py add-project NAME
+todo.py add-project NAME [--desc TEXT]
+todo.py update-project NAME [--rename NEW] [--desc TEXT|""]
 ```
 
-Statuses are `backlog`, `in_progress`, `done`. `DATE` accepts `YYYY-MM-DD`, `today`, `tomorrow`, `yesterday`, a weekday name (next occurrence, e.g. `friday`), or `next <weekday>` (that day of next week). Project names match case-insensitively, so "music bible" and "Music Bible" are the same project.
+Statuses are `backlog`, `in_progress`, `done`. `DATE` accepts `YYYY-MM-DD`, `today`, `tomorrow`, `yesterday`, a weekday name (next occurrence, e.g. `friday`), or `next <weekday>` (that day of next week). `--desc` is an optional short description (max 255 chars) on both tasks and projects; pass `--desc ""` to clear one. Project names match case-insensitively, so "music bible" and "Music Bible" are the same project.
 
 ## Mapping requests to commands
 
@@ -57,6 +59,9 @@ Statuses are `backlog`, `in_progress`, `done`. `DATE` accepts `YYYY-MM-DD`, `tod
 | "Move task 5 to in progress" | `start 5` |
 | "I started X" / "I finished X" | `find X`, then `start ID` / `done ID` (see matching rules) |
 | "Rename 7 to ..." / "push 7 to Monday" / "move 7 to Work" | `update 7 --title ...` / `--due monday` / `--project Work` |
+| "Add X to Y, it's about Z" / "describe 7 as ..." | `add "X" --project "Y" --desc "Z"` / `update 7 --desc "..."` |
+| "Tell me more about task 7" | `show 7` |
+| "Create project Work for client stuff" | `add-project Work --desc "client stuff"` |
 | "Delete task 9" | `delete 9` |
 | "What projects do I have?" | `projects` |
 
@@ -74,7 +79,7 @@ When the user refers to a task by words rather than ID, run `find` with a distin
 
 - Always modify data through the CLI. Never open or edit the SQLite file directly.
 - Never delete unless the user explicitly asks to delete. "Done" and "finished" mean `done`, not `delete`.
-- Do not invent due dates. Pass `--due` only when the user gave a date.
+- Do not invent due dates or descriptions. Pass `--due` / `--desc` only when the user gave them. Descriptions are for extra context the user states; the title stays short.
 - Keep answers short. Relay the CLI's output, which already shows IDs, status and due dates grouped by project. Add at most a sentence of summary.
 - Show IDs so the user can refer to tasks later.
 - The `week` and `today` views already include overdue tasks; do not re-query for them.
