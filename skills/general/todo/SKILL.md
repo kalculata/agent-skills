@@ -79,6 +79,7 @@ When the user refers to a task by words rather than ID, run `find` with a distin
 
 - Always modify data through the CLI. Never open or edit the SQLite file directly.
 - Never delete unless the user explicitly asks to delete. "Done" and "finished" mean `done`, not `delete`.
+- Fix spelling, capitalization and grammar in titles and descriptions before saving ("fix login bugg on mobil" becomes "Fix login bug on mobile"). Keep the user's wording and sentence structure; do not rephrase, reorder, shorten or expand.
 - Do not invent due dates or descriptions. Pass `--due` / `--desc` only when the user gave them. Descriptions are for extra context the user states; the title stays short.
 - Keep answers short. Relay the CLI's output, which already shows IDs, status and due dates grouped by project. Add at most a sentence of summary.
 - Show IDs so the user can refer to tasks later.
