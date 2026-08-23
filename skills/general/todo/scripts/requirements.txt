@@ -1,0 +1,2 @@
+# todo.py uses only the Python standard library (sqlite3, argparse).
+# Add packages here if the CLI ever needs them; setup.sh installs this file.
