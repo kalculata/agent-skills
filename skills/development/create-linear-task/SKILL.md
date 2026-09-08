@@ -88,7 +88,7 @@ Each sub-issue gets its own short title, a description that starts with `Repo: N
 
 Make it a **checkbox** in the parent's acceptance criteria when the piece is a few minutes of work in the same repo (bump a version, update a copy string, add a config flag). Do not create an issue for that.
 
-The parent's description keeps the overall goal and lists the sub-issues by title once they exist.
+The parent's description keeps the overall goal only. Do not list the sub-issues in it: Linear shows them automatically under the parent, and a hand-written list goes stale.
 
 ## 5. Show the draft, then create
 
@@ -112,8 +112,7 @@ On yes:
 
 1. `save_issue` for the parent with `team`, `title`, `description`, `project`, `milestone`, `labels`, `estimate`, and `links` for any URLs worth attaching.
 2. `save_issue` for each sub-issue with `parentId` set to the parent's identifier.
-3. If the parent's description lists sub-issues, update it with their identifiers.
-4. Report the created identifiers and URLs, parent first.
+3. Report the created identifiers and URLs, parent first.
 
 If a create fails midway, report exactly what was and was not created and stop. Do not retry blindly.
 
@@ -123,7 +122,7 @@ If a create fails midway, report exactly what was and was not created and stop. 
 - [ ] Asked only questions whose answers change the issue, in one batch
 - [ ] Team, project, milestone, labels and estimate taken from what the project already uses, not invented
 - [ ] Title is one specific imperative line; description has no filler and does not restate the title
-- [ ] Cross-repo or standalone work became sub-issues with a `Repo:` line; tiny pieces became checkboxes
+- [ ] Cross-repo or standalone work became sub-issues with a `Repo:` line; tiny pieces became checkboxes; parent description does not list the sub-issues
 - [ ] Full draft shown and confirmed before `save_issue`
 - [ ] No assignee, state or due date set unless the user asked
 - [ ] Created identifiers and URLs reported back
