@@ -8,6 +8,7 @@ Skills live under `skills/`, grouped by category. Each folder holds one skill as
 
 | Category | Skill | What it does |
 | --- | --- | --- |
+| `development` | [create-linear-task](./skills/development/create-linear-task/SKILL.md) | Create a Linear task from text, screenshots or links: pick project, milestone, labels and estimate from the project's recent issues, write a short professional title and description, split cross-repo work into sub-issues, and create only after the draft is confirmed. |
 | `development` | [implement-linear-task](./skills/development/implement-linear-task/SKILL.md) | Implement a Linear task end to end: fetch the issue, plan, work on the task branch (never main), verify, then commit/PR/report back to Linear after confirmation. |
 | `development` | [review-linear-task](./skills/development/review-linear-task/SKILL.md) | Review a Linear task's implementation against its requirements and end with a Complete/Incomplete/Needs-changes verdict; can post the review to Linear and merge after confirmation. |
 | `devops` | [setup-new-server](./skills/devops/setup-new-server/SKILL.md) | Harden a fresh Ubuntu/Debian VPS: sudo user, SSH keys and non-standard port, UFW, fail2ban, unattended upgrades, sysctl hardening. |
