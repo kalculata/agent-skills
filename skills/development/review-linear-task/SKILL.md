@@ -18,8 +18,11 @@ description: >-
   (info gathering, decisions, ops) get a required-actions summary from the
   issue comments instead of a code review; database changes (adding, removing
   or renaming fields, migrations) get an extra-careful model-vs-migration
-  review. Ends with a verdict (Complete / Incomplete / Needs changes) and a
-  findings list;
+  review. Findings that need no decision from the user (a stale reference,
+  a missing null check, a typo in an error message) are fixed directly on the
+  task branch, uncommitted, and listed under "Fixed" in the report; findings
+  that need a choice stay as findings. Ends with a verdict (Complete /
+  Incomplete / Needs changes) and a findings list;
   optionally posts a summary comment to Linear and offers to merge the branch
   into main and push, each after user confirmation. Never re-implement on main
   when the task already has a branch or open PR — always work through the task
@@ -28,12 +31,12 @@ description: >-
 
 # Review Linear Task
 
-Given a Linear issue, review the code that implements it against what the task actually asks for. The deliverable is a review report — do **not** fix code, commit, or change the issue state unless the user explicitly asks. The only merges in this flow are the two defined below: main into the task branch before reviewing, and (after confirmation) the task branch into main at the end. If the user asks to proceed after the review, always use the task branch — never re-implement the same changes directly on `main` while a task branch or open PR exists.
+Given a Linear issue, review the code that implements it against what the task actually asks for. The deliverable is a review report plus the fixes that need no decision from the user (Step 5). Anything else, commits included, waits for the user to ask. Do not change the issue state unless the user explicitly asks. The only merges in this flow are the two defined below: main into the task branch before reviewing, and (after confirmation) the task branch into main at the end. If the user asks to proceed after the review, always use the task branch — never re-implement the same changes directly on `main` while a task branch or open PR exists.
 
 ## Before you start
 
 - You need the Linear MCP server (`mcp__linear-server__*` tools). If its tools are unavailable, stop and tell the user to connect Linear.
-- Mostly read-only: fetching issues, reading diffs, and reading code are fine. The two allowed repo writes are part of this skill's flow: merging local `main` into the task branch before the review (Step 2), and merging the task branch into `main` + pushing at the very end — the latter **only** after the user confirms. Anything else that writes to Linear (comments, status changes) or to the repo requires explicit user confirmation first.
+- Mostly read-only: fetching issues, reading diffs, and reading code are fine. Three repo writes are part of this skill's flow: merging local `main` into the task branch before the review (Step 2), applying fixes that need no decision from the user on the task branch, uncommitted (Step 5), and merging the task branch into `main` + pushing at the very end — the latter **only** after the user confirms. Anything else that writes to Linear (comments, status changes) or to the repo requires explicit user confirmation first.
 - Before switching branches, run `git status` — if the working tree is dirty, stop and ask the user how to handle the uncommitted changes (stash, commit, or abort).
 - If no issue is specified, ask for the issue identifier (e.g. `ENG-123`) or infer it from the current branch name (`eng-123-add-login`) and confirm the guess with the user.
 
@@ -193,7 +196,29 @@ Report any doubt here as a finding — for schema changes, "probably fine" is no
 
 For any suspected bug, verify it before reporting: re-read the code path, and where practical reproduce it with a quick test or script. Do not report "plausible" issues as confirmed.
 
-## Step 5 — Report
+## Step 5 — Fix what needs no decision
+
+Not every finding needs to go back to the user. Once the findings list exists, split it in two.
+
+**Fix directly** when all of the following hold:
+
+- There is one obviously correct fix and no design or product choice to make.
+- The fix is small and local: one function, one file, or a handful of call sites.
+- It stays inside the task's scope and does not change behavior beyond what the task asks.
+- It does not touch a schema, migration, public API, config, or anything from the database section above.
+
+Typical cases: a stale reference after a rename, an unused import or dead branch, a missing null or empty check on a path the task covers, a wrong error message, an off-by-one the tests catch, a test that asserts the wrong value.
+
+**Leave as a finding** when the fix requires a choice (two reasonable approaches, an unclear requirement, a behavior change the task did not ask for), when it means implementing a missing or partial requirement (that is implementation, not review), or when the change is large enough that the user would want to see it before it exists. Say in the finding what decision is needed.
+
+How to apply fixes:
+
+- Work on the task branch synced in Step 2. If there is no task branch and the changes live in the working tree, fix them there. Never fix on `main` while a task branch or open PR exists.
+- Do not commit. Leave the changes uncommitted so the user sees them in `git diff`; Step 8 commits them on the task branch after confirmation.
+- Re-read each fixed path and re-run the tests you ran in Step 4. If a fix breaks something, revert that fix and report it as a finding instead.
+- Fixed findings do not count against the verdict. Findings you left for the user still do.
+
+## Step 6 — Report
 
 Present the review to the user in this format:
 
@@ -207,8 +232,11 @@ Present the review to the user in this format:
 - ⚠️ REQUIREMENT — what's partial and what's left
 - ❌ REQUIREMENT — missing entirely
 
-### Findings
-1. **[Blocker|Major|Minor]** One-sentence issue — `file:line`, why it's wrong, concrete failure scenario, suggested fix.
+### Fixed
+1. **[Blocker|Major|Minor]** One-sentence issue — `file:line`, what was wrong, what the fix changed. Uncommitted on TASK_BRANCH.
+
+### Findings (need your input)
+1. **[Blocker|Major|Minor]** One-sentence issue — `file:line`, why it's wrong, concrete failure scenario, suggested fix, and the decision needed from you.
 
 ### Out of scope / notes
 - Unrelated changes, unverifiable requirements, follow-up suggestions.
@@ -216,22 +244,23 @@ Present the review to the user in this format:
 
 Verdict rules:
 
-- **Complete** — all requirements ✅, no Blocker/Major findings.
-- **Needs changes** — requirements met but Blocker/Major findings exist.
+- **Complete** — all requirements ✅, no Blocker/Major findings left after Step 5.
+- **Needs changes** — requirements met but Blocker/Major findings still need the user's input.
 - **Incomplete** — one or more requirements ⚠️/❌.
 
-## Step 6 — Optional: post the review to Linear
+## Step 7 — Optional: post the review to Linear
 
 Only after the user confirms:
 
-- Post the report as a comment on the issue (`save_comment`), trimmed to what teammates need — verdict, requirement checklist, findings.
+- Post the report as a comment on the issue (`save_comment`), trimmed to what teammates need — verdict, requirement checklist, what was fixed, open findings.
 - Do **not** change the issue's state, assignee, or labels unless the user explicitly asks for that too.
 
-## Step 7 — Offer to merge into main and push
+## Step 8 — Offer to merge into main and push
 
 After everything else is done, ask the user whether they want the task branch merged into `main` and pushed. Never merge or push without their explicit yes in this conversation.
 
 - If the verdict was **Needs changes** or **Incomplete**, still ask — but restate the Blocker/Major findings or missing requirements in the question so the user decides with eyes open.
+- If Step 5 left uncommitted fixes on the task branch, commit them there first (after the user's yes) so the merge carries them. Show the commit in the result.
 - If an **open PR** exists for the task branch, prefer merging through that PR (`gh pr merge PR_NUMBER`) so GitHub records the merge correctly. Use a direct `git merge TASK_BRANCH` into `main` only when there is no PR or the user asks for that path.
 - On yes, follow the **Never bypass the task branch** workflow above — do not rewrite the changes on `main`:
 
@@ -239,7 +268,7 @@ After everything else is done, ask the user whether they want the task branch me
   git stash push -m "wip" -- unrelated paths if needed
   git checkout TASK_BRANCH
   git merge main
-  # fix conflicts and review findings on the task branch, then:
+  # commit the Step 5 fixes and resolve any remaining findings on the task branch, then:
   git push -u origin TASK_BRANCH
   gh pr merge PR_NUMBER   # when a PR exists
   # or, when merging locally without a PR:
@@ -264,6 +293,8 @@ After everything else is done, ask the user whether they want the task branch me
 - [ ] Database changes reviewed field by field: model ↔ migration ↔ task all agree
 - [ ] Reviewed the changes that belong to this task, not unrelated code
 - [ ] Every reported bug was verified, not just pattern-matched
+- [ ] Only findings with one obvious fix were fixed directly, on the task branch, left uncommitted, tests re-run, and each one listed under Fixed
+- [ ] Findings that need a choice, or that mean implementing a missing requirement, were left for the user
 - [ ] Test results (if run) reported honestly, including failures
 - [ ] Nothing posted to Linear without explicit confirmation
 - [ ] Did not re-implement on `main` while a task branch or open PR existed for the issue
